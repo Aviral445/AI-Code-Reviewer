@@ -28,24 +28,38 @@ export OPENAI_API_KEY="your-api-key-here"
 
 ## Usage
 
-Run the script by passing the path to the file you want to review:
+Run the script by passing one or more files or directory paths you want to review:
 
 ```bash
-python reviewer.py <path_to_your_code_file>
+python reviewer.py <path_1> <path_2> ...
 ```
 
-### Example
+When you provide a directory, the script will automatically find and review all `.py` files within it.
 
+### Examples
+
+**Review a single file:**
 ```bash
 python reviewer.py my_script.py
 ```
 
-The script will read the file, send its contents to OpenAI, and print out the code review along with the corrected code directly to your terminal.
+**Review multiple files and directories:**
+```bash
+python reviewer.py script1.py script2.py src/
+```
 
 ### Automatic Fixes
 
-You can also use the `--fix` flag to have the script automatically apply the suggested fixes to your file:
+You can use the `--fix` flag to have the script automatically apply the suggested fixes directly to your files:
 
 ```bash
 python reviewer.py my_script.py --fix
+```
+
+### Choosing the Model
+
+By default, the script uses `gpt-3.5-turbo`. You can specify a different OpenAI model (like `gpt-4`) using the `--model` flag:
+
+```bash
+python reviewer.py my_script.py --model gpt-4
 ```
