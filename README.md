@@ -2,7 +2,11 @@
 
 An intelligent, full-stack code review assistant combining **static linters** (`pylint`, `bandit`) and **lightning-fast AI code review** powered by **Groq LPU** (`llama-3.3-70b-versatile`).
 
+🔗 **Live Web App**: [https://ai-code-reviewer-five-delta.vercel.app](https://ai-code-reviewer-five-delta.vercel.app/)  
+⚡ **Live Backend API**: [https://ai-code-reviewer-backend-810r.onrender.com](https://ai-code-reviewer-backend-810r.onrender.com)
+
 ---
+
 
 ## ✨ Features
 
