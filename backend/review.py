@@ -12,7 +12,17 @@ PROVIDER = os.getenv("PROVIDER", "groq").lower()
 
 # Groq Config
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+
+# Fallback models in priority order
+GROQ_FALLBACK_MODELS = [
+    GROQ_MODEL,
+    "openai/gpt-oss-120b",
+    "qwen/qwen3.6-27b",
+    "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+]
 
 # OpenAI Config
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -104,13 +114,11 @@ def extract_refactored_code(ai_text: str) -> str:
     """Extract just the fixed code block from the review output."""
     if not ai_text:
         return ""
-    # Try finding the code block under Refactored Code section
     pattern = r"(?:###?\s*.*Refactored Code.*?\n+```[a-zA-Z0-9_-]*\n)([\s\S]*?)(?:```)"
     match = re.search(pattern, ai_text, re.IGNORECASE)
     if match:
         return match.group(1).strip()
     
-    # Fallback to the last code block in the message
     blocks = re.findall(r"```[a-zA-Z0-9_-]*\n([\s\S]*?)```", ai_text)
     if blocks:
         return blocks[-1].strip()
@@ -145,18 +153,28 @@ def run_ai_review(code: str, language: str = "auto"):
                 raise RuntimeError("groq Python package is not installed. Run: pip install groq")
 
         if not groq_client:
-            raise RuntimeError("GROQ_API_KEY is missing. Please set GROQ_API_KEY in backend/.env (Get one for free at https://console.groq.com)")
+            raise RuntimeError("GROQ_API_KEY is missing. Please set GROQ_API_KEY in backend/.env")
 
-        resp = groq_client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.2,
-            max_tokens=2048,
-        )
-        return resp.choices[0].message.content
+        # Try configured model with automatic fallback
+        last_err = None
+        models_to_try = list(dict.fromkeys(GROQ_FALLBACK_MODELS))
+        for m in models_to_try:
+            try:
+                resp = groq_client.chat.completions.create(
+                    model=m,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=2048,
+                )
+                return resp.choices[0].message.content
+            except Exception as e:
+                last_err = e
+                continue
+        
+        raise RuntimeError(f"Groq review failed: {str(last_err)}")
 
     # 2. Ollama Provider
     elif PROVIDER == "ollama":
