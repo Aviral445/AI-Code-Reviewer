@@ -1,6 +1,7 @@
 import subprocess
 import tempfile
 import os
+import re
 import requests
 from dotenv import load_dotenv
 
@@ -45,7 +46,7 @@ def is_python_code(code: str, language: str = "auto") -> bool:
         return True
     if language.lower() in ("javascript", "typescript", "js", "ts", "html", "css", "java", "cpp", "c", "go", "rust"):
         return False
-    # Auto-detection heuristic: Look for Python vs JS/C-style syntax
+    # Auto-detection heuristic
     js_indicators = ["function ", "const ", "let ", "var ", "console.log", "=== ", "=>", "document.", "import React"]
     py_indicators = ["def ", "import ", "from ", "class ", "elif ", "print(", "__name__", "self."]
     
@@ -88,8 +89,7 @@ def run_static_tools(code: str, language: str = "auto"):
                 "message": bandit_output.stdout.strip(),
                 "explanation": "Bandit detected potential security vulnerabilities."
             })
-    except Exception as err:
-        # If tools are not installed or fail in subshell, gracefully continue
+    except Exception:
         pass
     finally:
         if os.path.exists(tmp_path):
@@ -100,21 +100,37 @@ def run_static_tools(code: str, language: str = "auto"):
 
     return issues
 
+def extract_refactored_code(ai_text: str) -> str:
+    """Extract just the fixed code block from the review output."""
+    if not ai_text:
+        return ""
+    # Try finding the code block under Refactored Code section
+    pattern = r"(?:###?\s*.*Refactored Code.*?\n+```[a-zA-Z0-9_-]*\n)([\s\S]*?)(?:```)"
+    match = re.search(pattern, ai_text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    
+    # Fallback to the last code block in the message
+    blocks = re.findall(r"```[a-zA-Z0-9_-]*\n([\s\S]*?)```", ai_text)
+    if blocks:
+        return blocks[-1].strip()
+    return ""
+
 def run_ai_review(code: str, language: str = "auto"):
-    """Call the selected AI provider (Groq, OpenAI, or Ollama) for comprehensive review."""
+    """Call the selected AI provider (Groq, OpenAI, or Ollama) for comprehensive review and automated fix."""
     system_prompt = (
-        "You are a Principal Software Engineer and Security Specialist performing a professional code review. "
-        "Review the provided code thoroughly and return a well-structured markdown report formatted as follows:\n\n"
+        "You are a Principal Software Engineer and Security Specialist performing a professional code review and automated fix. "
+        "Review the provided code thoroughly and return a well-structured markdown report formatted with the exact following sections:\n\n"
         "### 🎯 Summary\n"
         "A brief 1-2 sentence assessment of the code's quality, functionality, and intent.\n\n"
         "### 🚨 Bugs & Security Vulnerabilities\n"
-        "List any critical bugs, edge cases, vulnerabilities (e.g. injection, XSS, memory leaks, off-by-one errors).\n\n"
-        "### ⚡ Performance & Optimization\n"
-        "Identify inefficient algorithms, time/space complexity improvements, or unnecessary operations.\n\n"
-        "### 🧹 Best Practices & Code Quality\n"
-        "Constructive feedback on naming, modularity, type hints/safety, and maintainability.\n\n"
+        "List all critical bugs, security vulnerabilities (e.g., SQL injection, XSS, resource/memory leaks, unhandled exceptions, off-by-one errors).\n\n"
+        "### ⚡ Performance & Complexity\n"
+        "Highlight any runtime/memory bottlenecks (e.g. O(N^2) loops) and how to optimize them.\n\n"
+        "### 🧹 Best Practices & Clean Code\n"
+        "Constructive feedback on naming, modularity, type safety, and maintainability.\n\n"
         "### 💡 Refactored Code\n"
-        "Provide a clean, production-ready refactored version of the code with brief comments explaining key changes."
+        "Provide the complete, bug-free, production-ready fixed code inside a single markdown code block with inline explanatory comments."
     )
     user_prompt = f"Language: {language}\n\n```\n{code}\n```"
 
@@ -126,7 +142,7 @@ def run_ai_review(code: str, language: str = "auto"):
                 from groq import Groq
                 groq_client = Groq(api_key=GROQ_API_KEY)
             except ImportError:
-                raise RuntimeError("groq Python package is not installed. Please run: pip install groq")
+                raise RuntimeError("groq Python package is not installed. Run: pip install groq")
 
         if not groq_client:
             raise RuntimeError("GROQ_API_KEY is missing. Please set GROQ_API_KEY in backend/.env (Get one for free at https://console.groq.com)")
@@ -174,7 +190,7 @@ def run_ai_review(code: str, language: str = "auto"):
                 raise RuntimeError("openai Python package is not installed.")
 
         if not openai_client:
-            raise RuntimeError("OPENAI_API_KEY is not set. Please add OPENAI_API_KEY in backend/.env")
+            raise RuntimeError("OPENAI_API_KEY is not set in backend/.env.")
 
         resp = openai_client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -188,14 +204,16 @@ def run_ai_review(code: str, language: str = "auto"):
         return resp.choices[0].message.content
 
     else:
-        raise ValueError(f"Unsupported PROVIDER: {PROVIDER}. Supported providers are 'groq', 'openai', 'ollama'.")
+        raise ValueError(f"Unsupported PROVIDER: {PROVIDER}. Supported providers: 'groq', 'openai', 'ollama'.")
 
 def review_code(code: str, language: str = "auto"):
     static_issues = run_static_tools(code, language)
     ai_feedback = run_ai_review(code, language)
+    fixed_code = extract_refactored_code(ai_feedback)
     return {
         "static_analysis": static_issues,
         "ai_review": ai_feedback,
+        "fixed_code": fixed_code
     }
 
 def get_provider_info() -> dict:
@@ -205,9 +223,9 @@ def get_provider_info() -> dict:
         "model": GROQ_MODEL if PROVIDER == "groq" else (OPENAI_MODEL if PROVIDER == "openai" else OLLAMA_MODEL),
     }
     if PROVIDER == "groq":
-        info["configured"] = bool(GROQ_API_KEY)
+        info["configured"] = bool(GROQ_API_KEY and GROQ_API_KEY != "your_groq_api_key_here")
     elif PROVIDER == "openai":
-        info["configured"] = bool(OPENAI_API_KEY)
+        info["configured"] = bool(OPENAI_API_KEY and OPENAI_API_KEY != "your_openai_api_key_here")
     elif PROVIDER == "ollama":
         info["host"] = OLLAMA_HOST
         info["configured"] = True

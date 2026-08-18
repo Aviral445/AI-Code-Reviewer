@@ -46,6 +46,7 @@ def review_code(request: CodeRequest):
         result = review_module.review_code(request.code, request.language)
         static_issues = result.get("static_analysis", [])
         ai_feedback = result.get("ai_review", "")
+        fixed_code = result.get("fixed_code", "")
         
         static_text_parts = []
         for idx, issue in enumerate(static_issues, start=1):
@@ -54,17 +55,18 @@ def review_code(request: CodeRequest):
             message = issue.get("message", "")
             static_text_parts.append(f"**Issue {idx} ({kind})** — {explanation}\n```text\n{message}\n```")
             
-        static_section = "\n\n".join(static_text_parts) if static_text_parts else "✅ No static analysis issues or security vulnerabilities flagged by static linters."
+        static_section = "\n\n".join(static_text_parts) if static_text_parts else "✅ No static issues or security vulnerabilities flagged by static linters."
         
         combined_markdown = (
             "## 🔍 Static Analysis (pylint / bandit)\n\n" + static_section +
-            "\n\n---\n\n## 🤖 AI Code Review\n\n" + (ai_feedback or "No AI feedback generated.")
+            "\n\n---\n\n## 🤖 AI Code Review & Fix\n\n" + (ai_feedback or "No AI feedback generated.")
         )
         
         return {
             "review": combined_markdown,
             "static_issues": static_issues,
-            "ai_review": ai_feedback
+            "ai_review": ai_feedback,
+            "fixed_code": fixed_code
         }
     except Exception as e:
         import traceback
